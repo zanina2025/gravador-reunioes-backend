@@ -1,5 +1,6 @@
 /**
  * BACKEND - GRAVADOR DE REUNIÕES COM OPENAI
+ * Versão 3.1 - Melhorias Zanina
  * 
  * APIs:
  * - POST /transcribe - Transcreve áudio com Whisper
@@ -51,7 +52,8 @@ const upload = multer({
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
-        openai: process.env.OPENAI_API_KEY ? 'connected' : 'not configured'
+        openai: process.env.OPENAI_API_KEY ? 'connected' : 'not configured',
+        version: '3.1'
     });
 });
 
@@ -140,39 +142,69 @@ INSTRUÇÕES:
 Analise a transcrição acima e gere uma ata de reunião estruturada em formato JSON com os seguintes campos:
 
 {
-  "resumo_executivo": "Resumo de 2-3 frases sobre o que foi discutido",
+  "resumo_executivo": "Resumo objetivo de 2-3 frases sobre o contexto e resultado principal da reunião",
   "participantes": ["nome1", "nome2", ...],
   "topicos_discutidos": [
     {
-      "titulo": "Título do tópico",
-      "descricao": "Descrição detalhada do que foi discutido"
+      "titulo": "Título curto e claro do tópico",
+      "descricao": "Descrição objetiva em 1-2 frases do que foi discutido sobre este tópico"
     }
   ],
   "decisoes_tomadas": [
     {
-      "decisao": "Descrição da decisão",
-      "responsavel": "Nome do responsável (se mencionado)",
-      "prazo": "Prazo mencionado (se houver)"
+      "decisao": "Descrição clara e objetiva da decisão tomada",
+      "responsavel": "Nome do responsável (se mencionado, senão deixe vazio)",
+      "prazo": "Prazo específico mencionado (se houver, senão deixe vazio)"
     }
   ],
   "encaminhamentos": [
     {
-      "tarefa": "Descrição da tarefa",
-      "responsavel": "Nome do responsável",
-      "prazo": "Prazo (se mencionado)"
+      "tarefa": "Descrição específica da ação a ser realizada (começar com verbo no infinitivo)",
+      "responsavel": "Nome do responsável pela tarefa (se mencionado, senão deixe vazio)",
+      "prazo": "Prazo específico mencionado (data/dia da semana, se houver, senão deixe vazio)"
     }
   ],
-  "observacoes": "Quaisquer observações relevantes não categorizadas acima"
+  "observacoes": "Quaisquer observações relevantes que não se encaixam nas categorias acima"
 }
 
-REGRAS IMPORTANTES:
-1. Seja preciso e baseie-se APENAS no que foi dito na transcrição
-2. Se um campo não tiver informação, use array vazio [] ou string vazia ""
-3. Identifique participantes pelos nomes mencionados na conversa
-4. Capture decisões explícitas (palavras como: decidimos, vamos, ficou definido)
-5. Identifique encaminhamentos com responsáveis e prazos quando mencionados
-6. Mantenha tom profissional e objetivo
-7. Retorne APENAS o JSON, sem texto adicional antes ou depois`;
+REGRAS CRÍTICAS (SIGA RIGOROSAMENTE):
+
+1. PARTICIPANTES:
+   - Identifique TODOS os nomes próprios mencionados na conversa
+   - Inclua quem disse "eu sou X", "meu nome é X", "presentes: X, Y, Z"
+   - Se apenas 1 pessoa falou, coloque apenas esse nome
+   - Se nenhum nome for mencionado, retorne array vazio []
+
+2. TÓPICOS DISCUTIDOS:
+   - Divida a reunião em 3-5 tópicos principais (não mais que 5)
+   - Cada tópico deve ter título CURTO (3-5 palavras) e descrição OBJETIVA (1-2 frases)
+   - Agrupe assuntos relacionados no mesmo tópico
+   - Não repita informações já em decisões/encaminhamentos
+
+3. DECISÕES TOMADAS:
+   - Identifique TODAS as conclusões, definições ou escolhas feitas
+   - Palavras-chave: "decidimos", "vamos", "ficou definido", "está aprovado", "conclusão"
+   - Também capture decisões IMPLÍCITAS: "precisamos fazer X", "o melhor caminho é Y"
+   - Seja específico: ao invés de "foi decidido sobre o projeto", escreva "foi decidido investir R$10.000 no projeto"
+
+4. ENCAMINHAMENTOS:
+   - Identifique TODAS as ações futuras, tarefas ou próximos passos
+   - Palavras-chave: "precisa", "deve", "vai", "vou", "tem que", "fazer", "preparar", "enviar", "agendar"
+   - Começar cada tarefa com VERBO NO INFINITIVO: "Preparar relatório", "Enviar proposta", "Testar funcionalidade"
+   - Extraia APENAS as tarefas específicas, não repita a transcrição inteira
+   - Se tiver responsável E prazo mencionados, inclua ambos
+
+5. FORMATO E PRECISÃO:
+   - Seja OBJETIVO e DIRETO ao ponto
+   - Use linguagem profissional mas clara
+   - Não invente informações que não foram mencionadas
+   - Se um campo não tiver informação, use array vazio [] ou string vazia ""
+   - Retorne APENAS o JSON, sem texto adicional antes ou depois
+
+6. QUALIDADE:
+   - Priorize CLAREZA sobre detalhes excessivos
+   - Cada decisão/encaminhamento deve ser ACIONÁVEL
+   - Evite ambiguidade ou informações vagas`;
 
         const completion = await openai.chat.completions.create({
             model: 'gpt-4o',
@@ -254,39 +286,69 @@ INSTRUÇÕES:
 Analise a transcrição acima e gere uma ata de reunião estruturada em formato JSON com os seguintes campos:
 
 {
-  "resumo_executivo": "Resumo de 2-3 frases sobre o que foi discutido",
+  "resumo_executivo": "Resumo objetivo de 2-3 frases sobre o contexto e resultado principal da reunião",
   "participantes": ["nome1", "nome2", ...],
   "topicos_discutidos": [
     {
-      "titulo": "Título do tópico",
-      "descricao": "Descrição detalhada do que foi discutido"
+      "titulo": "Título curto e claro do tópico",
+      "descricao": "Descrição objetiva em 1-2 frases do que foi discutido sobre este tópico"
     }
   ],
   "decisoes_tomadas": [
     {
-      "decisao": "Descrição da decisão",
-      "responsavel": "Nome do responsável (se mencionado)",
-      "prazo": "Prazo mencionado (se houver)"
+      "decisao": "Descrição clara e objetiva da decisão tomada",
+      "responsavel": "Nome do responsável (se mencionado, senão deixe vazio)",
+      "prazo": "Prazo específico mencionado (se houver, senão deixe vazio)"
     }
   ],
   "encaminhamentos": [
     {
-      "tarefa": "Descrição da tarefa",
-      "responsavel": "Nome do responsável",
-      "prazo": "Prazo (se mencionado)"
+      "tarefa": "Descrição específica da ação a ser realizada (começar com verbo no infinitivo)",
+      "responsavel": "Nome do responsável pela tarefa (se mencionado, senão deixe vazio)",
+      "prazo": "Prazo específico mencionado (data/dia da semana, se houver, senão deixe vazio)"
     }
   ],
-  "observacoes": "Quaisquer observações relevantes não categorizadas acima"
+  "observacoes": "Quaisquer observações relevantes que não se encaixam nas categorias acima"
 }
 
-REGRAS IMPORTANTES:
-1. Seja preciso e baseie-se APENAS no que foi dito na transcrição
-2. Se um campo não tiver informação, use array vazio [] ou string vazia ""
-3. Identifique participantes pelos nomes mencionados na conversa
-4. Capture decisões explícitas (palavras como: decidimos, vamos, ficou definido)
-5. Identifique encaminhamentos com responsáveis e prazos quando mencionados
-6. Mantenha tom profissional e objetivo
-7. Retorne APENAS o JSON, sem texto adicional antes ou depois`;
+REGRAS CRÍTICAS (SIGA RIGOROSAMENTE):
+
+1. PARTICIPANTES:
+   - Identifique TODOS os nomes próprios mencionados na conversa
+   - Inclua quem disse "eu sou X", "meu nome é X", "presentes: X, Y, Z"
+   - Se apenas 1 pessoa falou, coloque apenas esse nome
+   - Se nenhum nome for mencionado, retorne array vazio []
+
+2. TÓPICOS DISCUTIDOS:
+   - Divida a reunião em 3-5 tópicos principais (não mais que 5)
+   - Cada tópico deve ter título CURTO (3-5 palavras) e descrição OBJETIVA (1-2 frases)
+   - Agrupe assuntos relacionados no mesmo tópico
+   - Não repita informações já em decisões/encaminhamentos
+
+3. DECISÕES TOMADAS:
+   - Identifique TODAS as conclusões, definições ou escolhas feitas
+   - Palavras-chave: "decidimos", "vamos", "ficou definido", "está aprovado", "conclusão"
+   - Também capture decisões IMPLÍCITAS: "precisamos fazer X", "o melhor caminho é Y"
+   - Seja específico: ao invés de "foi decidido sobre o projeto", escreva "foi decidido investir R$10.000 no projeto"
+
+4. ENCAMINHAMENTOS:
+   - Identifique TODAS as ações futuras, tarefas ou próximos passos
+   - Palavras-chave: "precisa", "deve", "vai", "vou", "tem que", "fazer", "preparar", "enviar", "agendar"
+   - Começar cada tarefa com VERBO NO INFINITIVO: "Preparar relatório", "Enviar proposta", "Testar funcionalidade"
+   - Extraia APENAS as tarefas específicas, não repita a transcrição inteira
+   - Se tiver responsável E prazo mencionados, inclua ambos
+
+5. FORMATO E PRECISÃO:
+   - Seja OBJETIVO e DIRETO ao ponto
+   - Use linguagem profissional mas clara
+   - Não invente informações que não foram mencionadas
+   - Se um campo não tiver informação, use array vazio [] ou string vazia ""
+   - Retorne APENAS o JSON, sem texto adicional antes ou depois
+
+6. QUALIDADE:
+   - Priorize CLAREZA sobre detalhes excessivos
+   - Cada decisão/encaminhamento deve ser ACIONÁVEL
+   - Evite ambiguidade ou informações vagas`;
 
         const completion = await openai.chat.completions.create({
             model: 'gpt-4o',
@@ -344,6 +406,7 @@ app.listen(PORT, () => {
     console.log(`\n${'='.repeat(60)}`);
     console.log(`🚀 Backend rodando em http://localhost:${PORT}`);
     console.log(`✅ OpenAI configurado`);
+    console.log(`📦 Versão 3.1 - Melhorias Zanina`);
     console.log(`${'='.repeat(60)}\n`);
     console.log('Endpoints disponíveis:');
     console.log(`  GET  /health              - Health check`);
