@@ -1,6 +1,6 @@
 /**
  * BACKEND - GRAVADOR DE REUNIÕES COM OPENAI
- * Versão 3.1 - Melhorias Zanina
+ * Versão 3.3 - Correção: Adiciona extensão ao arquivo
  * 
  * APIs:
  * - POST /transcribe - Transcreve áudio com Whisper
@@ -42,7 +42,11 @@ app.use(express.json());
 // Configuração de upload (50MB max)
 const upload = multer({
     dest: 'uploads/',
-    limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+    fileFilter: (req, file, cb) => {
+        console.log('📁 Upload recebido:', file.originalname, 'tipo:', file.mimetype);
+        cb(null, true);
+    }
 });
 
 // ========================================
@@ -52,8 +56,7 @@ const upload = multer({
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
-        openai: process.env.OPENAI_API_KEY ? 'connected' : 'not configured',
-        version: '3.1'
+        openai: process.env.OPENAI_API_KEY ? 'connected' : 'not configured'
     });
 });
 
@@ -71,11 +74,17 @@ app.post('/transcribe', upload.single('audio'), async (req, res) => {
 
         console.log(`📁 Arquivo recebido: ${req.file.originalname} (${(req.file.size / 1024 / 1024).toFixed(2)} MB)`);
 
+        // Adiciona extensão ao arquivo temporário
+        const fileExtension = path.extname(req.file.originalname) || '.webm';
+        const newPath = req.file.path + fileExtension;
+        fs.renameSync(req.file.path, newPath);
+        console.log(`📝 Arquivo renomeado: ${newPath}`);
+
         // Transcreve com Whisper
         console.log('🎤 Iniciando transcrição com Whisper...');
         
         const transcription = await openai.audio.transcriptions.create({
-            file: fs.createReadStream(req.file.path),
+            file: fs.createReadStream(newPath),
             model: 'whisper-1',
             language: 'pt',
             response_format: 'verbose_json',
@@ -85,7 +94,7 @@ app.post('/transcribe', upload.single('audio'), async (req, res) => {
         console.log(`✅ Transcrição concluída (${transcription.text.split(' ').length} palavras)`);
 
         // Deleta arquivo temporário
-        fs.unlinkSync(req.file.path);
+        fs.unlinkSync(newPath);
         console.log('🗑️ Arquivo temporário deletado');
 
         const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -102,8 +111,17 @@ app.post('/transcribe', upload.single('audio'), async (req, res) => {
     } catch (error) {
         console.error('❌ Erro na transcrição:', error.message);
         
-        if (req.file && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
+        // Limpa arquivo se existir
+        try {
+            const fileExtension = path.extname(req.file.originalname) || '.webm';
+            const newPath = req.file.path + fileExtension;
+            if (fs.existsSync(newPath)) {
+                fs.unlinkSync(newPath);
+            } else if (fs.existsSync(req.file.path)) {
+                fs.unlinkSync(req.file.path);
+            }
+        } catch (cleanupError) {
+            console.error('⚠️ Erro ao limpar arquivo:', cleanupError.message);
         }
 
         res.status(500).json({
@@ -241,6 +259,7 @@ REGRAS CRÍTICAS (SIGA RIGOROSAMENTE):
 
 // ========================================
 // ROTA: PROCESSAR REUNIÃO COMPLETA
+// (Transcrição + Ata em uma chamada)
 // ========================================
 
 app.post('/process-meeting', upload.single('audio'), async (req, res) => {
@@ -256,12 +275,20 @@ app.post('/process-meeting', upload.single('audio'), async (req, res) => {
         console.log(`${'='.repeat(60)}`);
         console.log(`📁 Arquivo: ${req.file.originalname} (${(req.file.size / 1024 / 1024).toFixed(2)} MB)`);
 
+        // Adiciona extensão ao arquivo temporário
+        const fileExtension = path.extname(req.file.originalname) || '.webm';
+        const newPath = req.file.path + fileExtension;
+        fs.renameSync(req.file.path, newPath);
+        console.log(`📝 Arquivo renomeado: ${newPath}`);
+
+        // Extrai metadados da requisição
         const { meetingDate, startTime: meetingStartTime, endTime: meetingEndTime } = req.body;
 
+        // PASSO 1: Transcrição
         console.log('\n[1/2] 🎤 Transcrevendo com Whisper...');
         
         const transcription = await openai.audio.transcriptions.create({
-            file: fs.createReadStream(req.file.path),
+            file: fs.createReadStream(newPath),
             model: 'whisper-1',
             language: 'pt',
             response_format: 'verbose_json',
@@ -270,6 +297,7 @@ app.post('/process-meeting', upload.single('audio'), async (req, res) => {
 
         console.log(`✅ Transcrição: ${transcription.text.split(' ').length} palavras`);
 
+        // PASSO 2: Gerar Ata
         console.log('\n[2/2] 🤖 Gerando ata com GPT-4o...');
 
         const prompt = `Você é um assistente especializado em gerar atas de reunião profissionais e estruturadas.
@@ -364,7 +392,8 @@ REGRAS CRÍTICAS (SIGA RIGOROSAMENTE):
 
         console.log('✅ Ata gerada com sucesso');
 
-        fs.unlinkSync(req.file.path);
+        // Limpa arquivo temporário
+        fs.unlinkSync(newPath);
         console.log('\n🗑️ Arquivo temporário deletado');
 
         const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -383,8 +412,17 @@ REGRAS CRÍTICAS (SIGA RIGOROSAMENTE):
     } catch (error) {
         console.error('❌ Erro ao processar reunião:', error.message);
         
-        if (req.file && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
+        // Limpa arquivo se existir
+        try {
+            const fileExtension = path.extname(req.file.originalname) || '.webm';
+            const newPath = req.file.path + fileExtension;
+            if (fs.existsSync(newPath)) {
+                fs.unlinkSync(newPath);
+            } else if (fs.existsSync(req.file.path)) {
+                fs.unlinkSync(req.file.path);
+            }
+        } catch (cleanupError) {
+            console.error('⚠️ Erro ao limpar arquivo:', cleanupError.message);
         }
 
         res.status(500).json({
@@ -398,6 +436,7 @@ REGRAS CRÍTICAS (SIGA RIGOROSAMENTE):
 // INICIALIZAÇÃO
 // ========================================
 
+// Cria pasta de uploads se não existir
 if (!fs.existsSync('uploads')) {
     fs.mkdirSync('uploads');
 }
@@ -406,7 +445,6 @@ app.listen(PORT, () => {
     console.log(`\n${'='.repeat(60)}`);
     console.log(`🚀 Backend rodando em http://localhost:${PORT}`);
     console.log(`✅ OpenAI configurado`);
-    console.log(`📦 Versão 3.1 - Melhorias Zanina`);
     console.log(`${'='.repeat(60)}\n`);
     console.log('Endpoints disponíveis:');
     console.log(`  GET  /health              - Health check`);
